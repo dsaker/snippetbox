@@ -192,7 +192,6 @@ func (app *application) about(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
-	// Decode the form data into the userLoginForm struct.
 	var form userLoginForm
 
 	err := app.decodePostForm(r, &form)
@@ -201,9 +200,6 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Do some validation checks on the form. We check that both email and
-	// password are provided, and also check the format of the email address as
-	// a UX-nicety (in case the user makes a typo).
 	form.CheckField(validator.NotBlank(form.Email), "email", "This field cannot be blank")
 	form.CheckField(validator.Matches(form.Email, validator.EmailRX), "email", "This field must be a valid email address")
 	form.CheckField(validator.NotBlank(form.Password), "password", "This field cannot be blank")
@@ -211,12 +207,11 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 	if !form.Valid() {
 		data := app.newTemplateData(r)
 		data.Form = form
+
 		app.render(w, http.StatusUnprocessableEntity, "login.tmpl", data)
 		return
 	}
 
-	// Check whether the credentials are valid. If they're not, add a generic
-	// non-field error message and re-display the login page.
 	id, err := app.users.Authenticate(form.Email, form.Password)
 	if err != nil {
 		if errors.Is(err, models.ErrInvalidCredentials) {
@@ -224,6 +219,7 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 
 			data := app.newTemplateData(r)
 			data.Form = form
+
 			app.render(w, http.StatusUnprocessableEntity, "login.tmpl", data)
 		} else {
 			app.serverError(w, err)
@@ -231,21 +227,23 @@ func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use the RenewToken() method on the current session to change the session
-	// ID. It's good practice to generate a new session ID when the
-	// authentication state or privilege levels changes for the user (e.g. login
-	// and logout operations).
 	err = app.sessionManager.RenewToken(r.Context())
 	if err != nil {
 		app.serverError(w, err)
 		return
 	}
 
-	// Add the ID of the current user to the session, so that they are now
-	// 'logged in'.
 	app.sessionManager.Put(r.Context(), "authenticatedUserID", id)
 
-	// Redirect the user to the create snippet page.
+	// Use the PopString method to retrieve and remove a value from the session
+	// data in one step. If no matching key exists this will return the empty
+	// string.
+	path := app.sessionManager.PopString(r.Context(), "redirectPathAfterLogin")
+	if path != "" {
+		http.Redirect(w, r, path, http.StatusSeeOther)
+		return
+	}
+
 	http.Redirect(w, r, "/snippet/create", http.StatusSeeOther)
 }
 
